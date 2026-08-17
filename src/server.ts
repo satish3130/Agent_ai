@@ -99,19 +99,26 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       try {
         const pdfModule = await import('pdf-parse');
         let res: any;
-        if (typeof pdfModule.pdf === 'function') {
-          res = await pdfModule.pdf(file.buffer);
-        } else if (typeof pdfModule.PDFParse === 'function') {
+
+        if (typeof pdfModule.PDFParse === 'function') {
           const parser = new pdfModule.PDFParse({ data: file.buffer });
           res = await parser.getText();
+        } else if (typeof pdfModule.pdf === 'function') {
+          res = await pdfModule.pdf(file.buffer);
         } else if (typeof (pdfModule as any).default === 'function') {
-          res = await (pdfModule as any).default(file.buffer);
+          const Def = (pdfModule as any).default;
+          try {
+            const parser = new Def({ data: file.buffer });
+            res = await parser.getText();
+          } catch {
+            res = await Def(file.buffer);
+          }
         } else {
           throw new Error('PDF parsing method not found in module');
         }
 
         extractedText = typeof res === 'string' ? res : res?.text || String(res || '');
-        pageCount = res?.numpages || res?.numPages || (Array.isArray(res?.pages) ? res.pages.length : undefined);
+        pageCount = res?.total || res?.numpages || res?.numPages || (Array.isArray(res?.pages) ? res.pages.length : undefined);
       } catch (pdfErr: any) {
         console.error('[PDF Parse Error]', pdfErr);
         return res.status(500).json({

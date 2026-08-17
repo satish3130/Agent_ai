@@ -5,7 +5,7 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "https://agent-ai-oakl.onrender.com"
+      "dest": "https://agent-ai-oakl.onrender.com/api/$1"
     },
     {
       "handle": "filesystem"
