@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: mastra-rag-backend
+    env: node
+    plan: free
+    buildCommand: npm install --legacy-peer-deps && npm run build
+    startCommand: npm start
+    envVars:
+      - key: MODEL_PROVIDER
+        value: openrouter
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: ZHIPU_API_KEY
+        sync: false

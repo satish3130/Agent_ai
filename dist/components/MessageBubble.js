@@ -1,0 +1,6 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { User, Zap, Wrench, Clock } from 'lucide-react';
+export const MessageBubble = ({ message }) => {
+    const isUser = message.role === 'user';
+    return (_jsxs("div", { className: `message ${isUser ? 'user' : 'agent'}`, children: [_jsx("div", { className: "avatar", children: isUser ? _jsx(User, { size: 18 }) : _jsx(Zap, { size: 18 }) }), _jsxs("div", { className: "bubble", children: [_jsx("div", { children: message.text }), message.hint && (_jsxs("div", { style: { marginTop: '0.5rem', color: '#fcd34d', fontSize: '0.85rem' }, children: ["\uD83D\uDCA1 Hint: ", message.hint] })), message.toolCalls && message.toolCalls.length > 0 && (_jsx("div", { className: "tool-calls-list", children: message.toolCalls.map((tc, index) => (_jsxs("div", { className: "tool-badge", children: [_jsx(Wrench, { size: 13 }), _jsxs("span", { children: ["Tool: ", _jsx("strong", { children: tc.toolName || tc.name || 'tool' })] }), tc.args && _jsxs("code", { children: ["args: ", JSON.stringify(tc.args)] })] }, index))) })), message.elapsedMs && (_jsxs("div", { className: "latency-tag", children: [_jsx(Clock, { size: 12, style: { display: 'inline', marginRight: '4px', verticalAlign: 'middle' } }), "Latency: ", message.elapsedMs, "ms"] }))] })] }));
+};
