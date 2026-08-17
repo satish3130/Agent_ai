@@ -97,24 +97,48 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 
     if (fileExt === '.pdf') {
       try {
-        const pdfModule = await import('pdf-parse');
-        let res: any;
+        const pdfModule: any = await import('pdf-parse');
+        let res: any = null;
 
-        if (typeof pdfModule.PDFParse === 'function') {
-          const parser = new pdfModule.PDFParse({ data: file.buffer });
-          res = await parser.getText();
-        } else if (typeof pdfModule.pdf === 'function') {
-          res = await pdfModule.pdf(file.buffer);
-        } else if (typeof (pdfModule as any).default === 'function') {
-          const Def = (pdfModule as any).default;
+        // 1. Try class constructor PDFParse: new PDFParse({ data: buffer })
+        const ClassRef = pdfModule.PDFParse || (pdfModule.default && pdfModule.default.PDFParse);
+        if (typeof ClassRef === 'function') {
           try {
-            const parser = new Def({ data: file.buffer });
-            res = await parser.getText();
-          } catch {
-            res = await Def(file.buffer);
+            const parser = new ClassRef({ data: file.buffer });
+            if (typeof parser.getText === 'function') {
+              res = await parser.getText();
+            }
+          } catch (e) {
+            // Ignore constructor instantiation error and fall back
           }
-        } else {
-          throw new Error('PDF parsing method not found in module');
+        }
+
+        // 2. Try default export if it's a class or function
+        if (!res && typeof pdfModule.default === 'function') {
+          try {
+            const parser = new pdfModule.default({ data: file.buffer });
+            if (typeof parser.getText === 'function') {
+              res = await parser.getText();
+            }
+          } catch (e) {
+            try {
+              res = await pdfModule.default(file.buffer);
+            } catch (e2) {}
+          }
+        }
+
+        // 3. Try pdf helper function
+        if (!res && typeof pdfModule.pdf === 'function') {
+          res = await pdfModule.pdf(file.buffer);
+        }
+
+        // 4. Try module directly if function (pdf-parse v1)
+        if (!res && typeof pdfModule === 'function') {
+          res = await pdfModule(file.buffer);
+        }
+
+        if (!res) {
+          throw new Error('Could not parse PDF using available pdf-parse handlers.');
         }
 
         extractedText = typeof res === 'string' ? res : res?.text || String(res || '');
