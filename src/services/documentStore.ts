@@ -1,5 +1,4 @@
-import fs from 'fs';
-import path from 'path';
+import { MDocument } from '@mastra/rag';
 
 export interface DocumentChunk {
   id: string;
@@ -20,70 +19,68 @@ export interface UploadedDocument {
   wordCount: number;
   pageCount?: number;
   chunks: DocumentChunk[];
+  mastraDoc?: MDocument;
 }
 
 class DocumentStore {
   private documents: Map<string, UploadedDocument> = new Map();
 
   /**
-   * Split text into RAG text chunks (~500 chars with ~100 char overlap)
+   * Chunk document text using Mastra RAG MDocument module and strategies
    */
-  private chunkText(text: string, docId: string, docName: string, chunkSize = 500, overlap = 100): DocumentChunk[] {
-    const cleanText = text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n');
-    const paragraphs = cleanText.split(/\n\n+/);
-    const chunks: DocumentChunk[] = [];
-    let currentChunk = '';
-    let chunkIdx = 0;
+  private async chunkWithMastra(
+    text: string,
+    docId: string,
+    docName: string,
+    fileType: string
+  ): Promise<{ mastraDoc: MDocument; chunks: DocumentChunk[] }> {
+    const cleanText = text.trim();
+    const ext = docName.split('.').pop()?.toLowerCase() || '';
+    const metadata = { docId, documentName: docName, fileType };
 
-    for (const paragraph of paragraphs) {
-      const trimmed = paragraph.trim();
-      if (!trimmed) continue;
+    let mastraDoc: MDocument;
+    let mastraChunks: any[] = [];
 
-      if ((currentChunk + '\n\n' + trimmed).length > chunkSize && currentChunk.length > 0) {
-        chunks.push({
-          id: `${docId}-chunk-${chunkIdx}`,
-          documentId: docId,
-          documentName: docName,
-          chunkIndex: chunkIdx,
-          text: currentChunk.trim(),
-          wordCount: currentChunk.trim().split(/\s+/).length,
-        });
-        chunkIdx++;
-        // Keep overlap from end of current chunk
-        currentChunk = currentChunk.slice(-overlap) + '\n\n' + trimmed;
-      } else {
-        currentChunk = currentChunk ? currentChunk + '\n\n' + trimmed : trimmed;
-      }
+    if (ext === 'md' || ext === 'markdown') {
+      mastraDoc = MDocument.fromMarkdown(cleanText, metadata);
+      mastraChunks = await mastraDoc.chunk({ strategy: 'markdown', maxSize: 500, overlap: 50 });
+    } else if (ext === 'html' || ext === 'htm') {
+      mastraDoc = MDocument.fromHTML(cleanText, metadata);
+      mastraChunks = await mastraDoc.chunk({ strategy: 'recursive', maxSize: 500, overlap: 100 });
+    } else if (ext === 'json') {
+      mastraDoc = MDocument.fromJSON(cleanText, metadata);
+      mastraChunks = await mastraDoc.chunk({ strategy: 'json', maxSize: 500, overlap: 50 });
+    } else {
+      mastraDoc = MDocument.fromText(cleanText, metadata);
+      mastraChunks = await mastraDoc.chunk({ strategy: 'recursive', maxSize: 500, overlap: 100 });
     }
 
-    if (currentChunk.trim().length > 0) {
-      chunks.push({
-        id: `${docId}-chunk-${chunkIdx}`,
-        documentId: docId,
-        documentName: docName,
-        chunkIndex: chunkIdx,
-        text: currentChunk.trim(),
-        wordCount: currentChunk.trim().split(/\s+/).length,
-      });
-    }
+    const chunks: DocumentChunk[] = mastraChunks.map((c: any, idx: number) => ({
+      id: c.id_ || `${docId}-chunk-${idx}`,
+      documentId: docId,
+      documentName: docName,
+      chunkIndex: idx,
+      text: c.text,
+      wordCount: c.text.trim().split(/\s+/).length,
+    }));
 
-    return chunks;
+    return { mastraDoc, chunks };
   }
 
   /**
-   * Add a new parsed document to the RAG store
+   * Add a new parsed document to the Mastra RAG store
    */
-  public addDocument(
+  public async addDocument(
     id: string,
     name: string,
     size: number,
     type: string,
     rawText: string,
     pageCount?: number
-  ): UploadedDocument {
+  ): Promise<UploadedDocument> {
     const text = rawText.trim();
     const wordCount = text ? text.split(/\s+/).length : 0;
-    const chunks = this.chunkText(text, id, name);
+    const { mastraDoc, chunks } = await this.chunkWithMastra(text, id, name, type);
 
     const doc: UploadedDocument = {
       id,
@@ -95,18 +92,19 @@ class DocumentStore {
       wordCount,
       pageCount,
       chunks,
+      mastraDoc,
     };
 
     this.documents.set(id, doc);
-    console.log(`[DocumentStore] Indexed doc "${name}" (${id}): ${chunks.length} chunks, ${wordCount} words.`);
+    console.log(`[DocumentStore] Indexed doc "${name}" (${id}) with Mastra RAG MDocument: ${chunks.length} chunks, ${wordCount} words.`);
     return doc;
   }
 
   /**
    * Get all active uploaded documents
    */
-  public getAllDocuments(): Omit<UploadedDocument, 'text'>[] {
-    return Array.from(this.documents.values()).map(({ text, ...rest }) => rest);
+  public getAllDocuments(): Omit<UploadedDocument, 'text' | 'mastraDoc'>[] {
+    return Array.from(this.documents.values()).map(({ text, mastraDoc, ...rest }) => rest);
   }
 
   /**
@@ -158,13 +156,11 @@ class DocumentStore {
 
       for (const token of queryTokens) {
         if (chunkLower.includes(token)) {
-          // Boost exact match
           const count = (chunkLower.match(new RegExp(`\\b${token}\\b`, 'g')) || []).length;
           score += 2 + count;
         }
       }
 
-      // Bonus score if full query phrase appears
       if (chunkLower.includes(query.toLowerCase())) {
         score += 10;
       }
@@ -196,3 +192,4 @@ class DocumentStore {
 }
 
 export const documentStore = new DocumentStore();
+

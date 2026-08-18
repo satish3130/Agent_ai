@@ -87,16 +87,48 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
         if (fileExt === '.pdf') {
             try {
                 const pdfModule = await import('pdf-parse');
-                const pdfParse = pdfModule.PDFParse ||
-                    pdfModule.pdf ||
-                    pdfModule.default ||
-                    (typeof pdfModule === 'function' ? pdfModule : null);
-                if (typeof pdfParse !== 'function') {
-                    throw new Error('PDF parsing function not found in module');
+                let res = null;
+                // 1. Try class constructor PDFParse: new PDFParse({ data: buffer })
+                const ClassRef = pdfModule.PDFParse || (pdfModule.default && pdfModule.default.PDFParse);
+                if (typeof ClassRef === 'function') {
+                    try {
+                        const parser = new ClassRef({ data: file.buffer });
+                        if (typeof parser.getText === 'function') {
+                            res = await parser.getText();
+                        }
+                    }
+                    catch (e) {
+                        // Ignore constructor instantiation error and fall back
+                    }
                 }
-                const pdfData = await pdfParse(file.buffer);
-                extractedText = pdfData.text;
-                pageCount = pdfData.numpages || pdfData.numPages;
+                // 2. Try default export if it's a class or function
+                if (!res && typeof pdfModule.default === 'function') {
+                    try {
+                        const parser = new pdfModule.default({ data: file.buffer });
+                        if (typeof parser.getText === 'function') {
+                            res = await parser.getText();
+                        }
+                    }
+                    catch (e) {
+                        try {
+                            res = await pdfModule.default(file.buffer);
+                        }
+                        catch (e2) { }
+                    }
+                }
+                // 3. Try pdf helper function
+                if (!res && typeof pdfModule.pdf === 'function') {
+                    res = await pdfModule.pdf(file.buffer);
+                }
+                // 4. Try module directly if function (pdf-parse v1)
+                if (!res && typeof pdfModule === 'function') {
+                    res = await pdfModule(file.buffer);
+                }
+                if (!res) {
+                    throw new Error('Could not parse PDF using available pdf-parse handlers.');
+                }
+                extractedText = typeof res === 'string' ? res : res?.text || String(res || '');
+                pageCount = res?.total || res?.numpages || res?.numPages || (Array.isArray(res?.pages) ? res.pages.length : undefined);
             }
             catch (pdfErr) {
                 console.error('[PDF Parse Error]', pdfErr);
@@ -116,7 +148,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
                 error: `Could not extract text from document "${filename}". File might be empty or image-only scanned PDF.`,
             });
         }
-        const document = documentStore.addDocument(docId, filename, file.size, file.mimetype || fileExt, extractedText, pageCount);
+        const document = await documentStore.addDocument(docId, filename, file.size, file.mimetype || fileExt, extractedText, pageCount);
         res.json({
             success: true,
             document: {

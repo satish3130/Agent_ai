@@ -4,13 +4,13 @@ import { documentStore } from '../../services/documentStore.js';
 
 export const documentSearchTool = createTool({
   id: 'document-search-tool',
-  description: 'Searches uploaded PDF files and documents (RAG vector store) to retrieve relevant text excerpts, facts, and passages to answer user questions accurately.',
+  description: 'Searches uploaded documents processed via Mastra RAG (MDocument) to retrieve relevant text excerpts, facts, and passages.',
   inputSchema: z.object({
     query: z.string().describe('Search query or question to find relevant document passages'),
     documentId: z.string().optional().describe('Optional ID of a specific document to search inside'),
   }),
   execute: async ({ query, documentId }) => {
-    console.log(`[Tool Call: document-search] Querying RAG store: "${query}"`);
+    console.log(`[Tool Call: document-search] Querying Mastra RAG store: "${query}"`);
     try {
       const activeDocs = documentStore.getAllDocuments();
 
@@ -31,7 +31,7 @@ export const documentSearchTool = createTool({
         return {
           success: true,
           query,
-          message: 'No direct word matches found, but returning available document context excerpts.',
+          message: 'No direct matches found, returning available Mastra document context excerpts.',
           documentsCount: activeDocs.length,
           results: [
             {
@@ -59,7 +59,7 @@ export const documentSearchTool = createTool({
       return {
         success: false,
         query,
-        error: err?.message || 'Error searching document store',
+        error: err?.message || 'Error searching Mastra RAG document store',
       };
     }
   },

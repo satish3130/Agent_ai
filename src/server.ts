@@ -162,7 +162,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       });
     }
 
-    const document = documentStore.addDocument(
+    const document = await documentStore.addDocument(
       docId,
       filename,
       file.size,
